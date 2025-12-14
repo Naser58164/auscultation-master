@@ -4,22 +4,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useArduinoSerial } from '@/hooks/useArduinoSerial';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { BodyDiagram } from '@/components/BodyDiagram';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SoundSystemControl } from '@/components/SoundSystemControl';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Pause, Square, Users, Copy, Send, Volume2, Loader2, CheckCircle, XCircle, Usb, Unplug, Terminal } from 'lucide-react';
-import { Session, Sound, SoundSystem, ALL_LOCATIONS, LUNG_SOUNDS, HEART_SOUNDS, BOWEL_SOUNDS, Response as SessionResponse } from '@/types/database';
+import { Play, Pause, Square, Users, Copy, Loader2, CheckCircle, XCircle, Usb, Unplug, Terminal, StopCircle } from 'lucide-react';
+import { Session, Sound, SoundSystem, Response as SessionResponse } from '@/types/database';
 
 interface Participant {
   id: string;
   user_id: string;
   joined_at: string;
+}
+
+interface ActiveSound {
+  system: SoundSystem;
+  soundCode: string;
+  location: string;
+  volume: number;
 }
 
 export default function ExaminerSessionControl() {
@@ -36,12 +40,8 @@ export default function ExaminerSessionControl() {
   const [responses, setResponses] = useState<SessionResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Control state
-  const [selectedSystem, setSelectedSystem] = useState<SoundSystem>('lung');
-  const [selectedSound, setSelectedSound] = useState<string>('');
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
-  const [volume, setVolume] = useState([5]);
-  const [sending, setSending] = useState(false);
+  // Multi-sound state - track active sounds per system
+  const [activeSounds, setActiveSounds] = useState<Map<SoundSystem, ActiveSound>>(new Map());
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -117,40 +117,75 @@ export default function ExaminerSessionControl() {
     }
   };
 
-  const sendCommand = async () => {
-    if (!selectedSound || !selectedLocation || !session) {
-      toast({ title: 'Missing Selection', description: 'Please select a sound and location', variant: 'destructive' });
-      return;
-    }
+  const handlePlaySound = async (system: SoundSystem, soundCode: string, location: string, volume: number) => {
+    if (!session) return;
 
-    setSending(true);
     try {
-      // Update session with current sound/location
-      const { error } = await supabase
+      // Update session with current sound/location for this system
+      const soundId = sounds.find(s => s.sound_code === soundCode)?.id;
+      
+      await supabase
         .from('sessions')
         .update({
-          current_sound_id: sounds.find(s => s.sound_code === selectedSound)?.id,
-          current_location: selectedLocation,
-          current_volume: volume[0],
+          current_sound_id: soundId,
+          current_location: location,
+          current_volume: volume,
         })
         .eq('id', session.id);
 
-      if (error) throw error;
+      // Send command to Arduino
+      await arduino.playSound(system, soundCode, location, volume);
 
-      // Send command to Arduino via edge function
-      await arduino.playSound(selectedSystem, selectedSound, selectedLocation, volume[0]);
+      // Update active sounds state
+      setActiveSounds(prev => {
+        const newMap = new Map(prev);
+        newMap.set(system, { system, soundCode, location, volume });
+        return newMap;
+      });
 
-      toast({ title: 'Command Sent', description: `Playing ${selectedSound} at ${selectedLocation}` });
+      toast({ title: 'Sound Playing', description: `${system.toUpperCase()}: ${soundCode} at ${location}` });
     } catch (error) {
-      console.error('Error sending command:', error);
-      toast({ title: 'Error', description: 'Failed to send command', variant: 'destructive' });
-    } finally {
-      setSending(false);
+      console.error('Error playing sound:', error);
+      toast({ title: 'Error', description: 'Failed to play sound', variant: 'destructive' });
     }
   };
 
-  const handleStopSound = async () => {
-    await arduino.stopSound();
+  const handleStopSound = async (system: SoundSystem) => {
+    try {
+      await arduino.stopSound();
+      
+      setActiveSounds(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(system);
+        return newMap;
+      });
+
+      toast({ title: 'Sound Stopped', description: `${system.toUpperCase()} speaker stopped` });
+    } catch (error) {
+      console.error('Error stopping sound:', error);
+      toast({ title: 'Error', description: 'Failed to stop sound', variant: 'destructive' });
+    }
+  };
+
+  const handleStopAllSounds = async () => {
+    try {
+      await arduino.stopSound();
+      setActiveSounds(new Map());
+      toast({ title: 'All Sounds Stopped' });
+    } catch (error) {
+      console.error('Error stopping sounds:', error);
+      toast({ title: 'Error', description: 'Failed to stop sounds', variant: 'destructive' });
+    }
+  };
+
+  const previewSound = (soundCode: string) => {
+    const sound = sounds.find(s => s.sound_code === soundCode);
+    if (sound?.file_url) {
+      if (audioRef.current) audioRef.current.pause();
+      audioRef.current = new Audio(sound.file_url);
+      audioRef.current.volume = 0.5;
+      audioRef.current.play();
+    }
   };
 
   const copyJoinLink = () => {
@@ -158,24 +193,6 @@ export default function ExaminerSessionControl() {
     const link = `${window.location.origin}/join/${session.session_code}`;
     navigator.clipboard.writeText(link);
     toast({ title: 'Link Copied' });
-  };
-
-  const getSoundOptions = () => {
-    switch (selectedSystem) {
-      case 'lung': return LUNG_SOUNDS;
-      case 'heart': return HEART_SOUNDS;
-      case 'bowel': return BOWEL_SOUNDS;
-    }
-  };
-
-  const previewSound = () => {
-    const sound = sounds.find(s => s.sound_code === selectedSound);
-    if (sound?.file_url) {
-      if (audioRef.current) audioRef.current.pause();
-      audioRef.current = new Audio(sound.file_url);
-      audioRef.current.volume = volume[0] / 10;
-      audioRef.current.play();
-    }
   };
 
   if (loading) {
@@ -198,6 +215,8 @@ export default function ExaminerSessionControl() {
       </DashboardLayout>
     );
   }
+
+  const isSessionActive = session.status === 'active';
 
   return (
     <DashboardLayout>
@@ -244,161 +263,133 @@ export default function ExaminerSessionControl() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Arduino Connection */}
-          <Card className="lg:col-span-3">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <CardTitle className="flex items-center gap-2">
-                    {arduino.isConnected ? (
-                      <Usb className="h-5 w-5 text-success" />
-                    ) : (
-                      <Unplug className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    Manikin Hardware
-                  </CardTitle>
-                  <Badge variant={arduino.isConnected ? 'default' : 'secondary'}>
-                    {arduino.isConnected ? 'Connected' : 'Disconnected'}
-                  </Badge>
-                  {!arduino.isSupported && (
-                    <Badge variant="destructive">WebSerial Not Supported</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowLogs(!showLogs)}
-                  >
-                    <Terminal className="h-4 w-4 mr-1" />
-                    {showLogs ? 'Hide' : 'Show'} Logs
-                  </Button>
+        {/* Arduino Connection */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CardTitle className="flex items-center gap-2">
                   {arduino.isConnected ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={handleStopSound}>
-                        <Square className="h-4 w-4 mr-1" />
-                        Stop Sound
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={arduino.disconnect}>
-                        <Unplug className="h-4 w-4 mr-1" />
-                        Disconnect
-                      </Button>
-                    </>
+                    <Usb className="h-5 w-5 text-green-500" />
                   ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => arduino.connect()}
-                      disabled={!arduino.isSupported || arduino.isConnecting}
-                    >
-                      {arduino.isConnecting ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <Usb className="h-4 w-4 mr-1" />
-                      )}
-                      Connect Arduino
-                    </Button>
+                    <Unplug className="h-5 w-5 text-muted-foreground" />
                   )}
-                </div>
+                  Manikin Hardware
+                </CardTitle>
+                <Badge variant={arduino.isConnected ? 'default' : 'secondary'}>
+                  {arduino.isConnected ? 'Connected' : 'Disconnected'}
+                </Badge>
+                {!arduino.isSupported && (
+                  <Badge variant="destructive">WebSerial Not Supported</Badge>
+                )}
               </div>
-            </CardHeader>
-            {showLogs && (
-              <CardContent className="pt-0">
-                <ScrollArea className="h-32 w-full rounded border bg-muted/30 p-2 font-mono text-xs">
-                  {arduino.logs.length === 0 ? (
-                    <p className="text-muted-foreground">No logs yet...</p>
-                  ) : (
-                    arduino.logs.map((log, i) => (
-                      <div key={i} className="text-muted-foreground">{log}</div>
-                    ))
-                  )}
-                </ScrollArea>
-                <Button variant="ghost" size="sm" onClick={arduino.clearLogs} className="mt-2">
-                  Clear Logs
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLogs(!showLogs)}
+                >
+                  <Terminal className="h-4 w-4 mr-1" />
+                  {showLogs ? 'Hide' : 'Show'} Logs
                 </Button>
-              </CardContent>
-            )}
-          </Card>
+                {activeSounds.size > 0 && (
+                  <Button variant="destructive" size="sm" onClick={handleStopAllSounds}>
+                    <StopCircle className="h-4 w-4 mr-1" />
+                    Stop All
+                  </Button>
+                )}
+                {arduino.isConnected ? (
+                  <Button variant="destructive" size="sm" onClick={arduino.disconnect}>
+                    <Unplug className="h-4 w-4 mr-1" />
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => arduino.connect()}
+                    disabled={!arduino.isSupported || arduino.isConnecting}
+                  >
+                    {arduino.isConnecting ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Usb className="h-4 w-4 mr-1" />
+                    )}
+                    Connect Arduino
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {showLogs && (
+            <CardContent className="pt-0">
+              <ScrollArea className="h-32 w-full rounded border bg-muted/30 p-2 font-mono text-xs">
+                {arduino.logs.length === 0 ? (
+                  <p className="text-muted-foreground">No logs yet...</p>
+                ) : (
+                  arduino.logs.map((log, i) => (
+                    <div key={i} className="text-muted-foreground">{log}</div>
+                  ))
+                )}
+              </ScrollArea>
+              <Button variant="ghost" size="sm" onClick={arduino.clearLogs} className="mt-2">
+                Clear Logs
+              </Button>
+            </CardContent>
+          )}
+        </Card>
 
-          {/* Control Panel */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Sound Control</CardTitle>
-              <CardDescription>Select a sound and anatomical location</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Sound Selection */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>System</Label>
-                    <Select value={selectedSystem} onValueChange={(v) => { setSelectedSystem(v as SoundSystem); setSelectedSound(''); }}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="lung">🫁 Lungs</SelectItem>
-                        <SelectItem value="heart">❤️ Heart</SelectItem>
-                        <SelectItem value="bowel">🔊 Bowel</SelectItem>
-                      </SelectContent>
-                    </Select>
+        <div className="grid lg:grid-cols-4 gap-6">
+          {/* Multi-Sound Control Panel */}
+          <div className="lg:col-span-3">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Multi-Speaker Control</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Control different body system speakers simultaneously
+                    </p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Sound</Label>
-                    <Select value={selectedSound} onValueChange={setSelectedSound}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a sound..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getSoundOptions().map((sound) => (
-                          <SelectItem key={sound.code} value={sound.code}>
-                            {sound.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Volume: {volume[0]}</Label>
-                    <div className="flex items-center gap-2">
-                      <Volume2 className="h-4 w-4 text-muted-foreground" />
-                      <Slider
-                        value={volume}
-                        onValueChange={setVolume}
-                        min={1}
-                        max={10}
-                        step={1}
-                        className="flex-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={previewSound} disabled={!selectedSound}>
-                      <Play className="mr-2 h-4 w-4" />
-                      Preview
-                    </Button>
-                    <Button onClick={sendCommand} disabled={sending || !selectedSound || !selectedLocation || session.status !== 'active'} className="flex-1">
-                      {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                      Send Command
-                    </Button>
-                  </div>
+                  {activeSounds.size > 0 && (
+                    <Badge variant="default" className="text-sm">
+                      {activeSounds.size} Active
+                    </Badge>
+                  )}
                 </div>
-
-                {/* Body Diagram */}
-                <div>
-                  <Label className="mb-2 block">Location: {selectedLocation ? ALL_LOCATIONS.find(l => l.id === selectedLocation)?.name : 'Click to select'}</Label>
-                  <BodyDiagram
-                    selectedLocation={selectedLocation}
-                    onLocationSelect={setSelectedLocation}
-                    activeSystems={[selectedSystem]}
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <SoundSystemControl
+                    system="lung"
+                    sounds={sounds}
+                    isActive={activeSounds.has('lung')}
+                    isSessionActive={isSessionActive}
+                    onPlay={handlePlaySound}
+                    onStop={handleStopSound}
+                    onPreview={previewSound}
+                  />
+                  <SoundSystemControl
+                    system="heart"
+                    sounds={sounds}
+                    isActive={activeSounds.has('heart')}
+                    isSessionActive={isSessionActive}
+                    onPlay={handlePlaySound}
+                    onStop={handleStopSound}
+                    onPreview={previewSound}
+                  />
+                  <SoundSystemControl
+                    system="bowel"
+                    sounds={sounds}
+                    isActive={activeSounds.has('bowel')}
+                    isSessionActive={isSessionActive}
+                    onPlay={handlePlaySound}
+                    onStop={handleStopSound}
+                    onPreview={previewSound}
                   />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Participants & Responses */}
           <div className="space-y-6">
@@ -414,10 +405,10 @@ export default function ExaminerSessionControl() {
                   <p className="text-sm text-muted-foreground">No students have joined yet</p>
                 ) : (
                   <div className="space-y-2">
-                    {participants.map((p) => (
+                    {participants.map((p, idx) => (
                       <div key={p.id} className="flex items-center gap-2 text-sm">
-                        <div className="w-2 h-2 rounded-full bg-success" />
-                        <span>Student {participants.indexOf(p) + 1}</span>
+                        <div className="w-2 h-2 rounded-full bg-green-500" />
+                        <span>Student {idx + 1}</span>
                       </div>
                     ))}
                   </div>
@@ -439,12 +430,12 @@ export default function ExaminerSessionControl() {
                         <span className="truncate">{r.submitted_location}</span>
                         <div className="flex items-center gap-1">
                           {r.is_location_correct ? (
-                            <CheckCircle className="h-4 w-4 text-success" />
+                            <CheckCircle className="h-4 w-4 text-green-500" />
                           ) : (
                             <XCircle className="h-4 w-4 text-destructive" />
                           )}
                           {r.is_sound_correct ? (
-                            <CheckCircle className="h-4 w-4 text-success" />
+                            <CheckCircle className="h-4 w-4 text-green-500" />
                           ) : (
                             <XCircle className="h-4 w-4 text-destructive" />
                           )}
