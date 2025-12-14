@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { BodyDiagram } from '@/components/BodyDiagram';
+import { SessionLeaderboard } from '@/components/SessionLeaderboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -441,80 +442,86 @@ export default function ExamineeSession() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Where did you hear the sound?</CardTitle>
-                <CardDescription>Click on the anatomical location</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BodyDiagram
-                  selectedLocation={selectedLocation}
-                  onLocationSelect={setSelectedLocation}
-                />
-                {selectedLocation && (
-                  <p className="text-center mt-4 font-medium">
-                    Selected: {ALL_LOCATIONS.find(l => l.id === selectedLocation)?.name}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>What sound did you hear?</CardTitle>
-                <CardDescription>Select the type of sound</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Sound Type</Label>
-                  <Select value={selectedSound} onValueChange={setSelectedSound}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a sound..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Lung Sounds</div>
-                      {ALL_SOUNDS.filter(s => s.code.startsWith('LUNG')).map((sound) => (
-                        <SelectItem key={sound.code} value={sound.code}>
-                          {sound.name}
-                        </SelectItem>
-                      ))}
-                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Heart Sounds</div>
-                      {ALL_SOUNDS.filter(s => s.code.startsWith('HEART')).map((sound) => (
-                        <SelectItem key={sound.code} value={sound.code}>
-                          {sound.name}
-                        </SelectItem>
-                      ))}
-                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Bowel Sounds</div>
-                      {ALL_SOUNDS.filter(s => s.code.startsWith('BOWEL')).map((sound) => (
-                        <SelectItem key={sound.code} value={sound.code}>
-                          {sound.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button
-                  onClick={submitResponse}
-                  disabled={submitting || !selectedLocation || !selectedSound}
-                  className="w-full"
-                  size="lg"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-4 w-4" />
-                      Submit Answer
-                    </>
+          <div className="grid lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Where did you hear the sound?</CardTitle>
+                  <CardDescription>Click on the anatomical location</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BodyDiagram
+                    selectedLocation={selectedLocation}
+                    onLocationSelect={setSelectedLocation}
+                  />
+                  {selectedLocation && (
+                    <p className="text-center mt-4 font-medium">
+                      Selected: {ALL_LOCATIONS.find(l => l.id === selectedLocation)?.name}
+                    </p>
                   )}
-                </Button>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>What sound did you hear?</CardTitle>
+                  <CardDescription>Select the type of sound</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Sound Type</Label>
+                    <Select value={selectedSound} onValueChange={setSelectedSound}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a sound..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Lung Sounds</div>
+                        {ALL_SOUNDS.filter(s => s.code.startsWith('LUNG')).map((sound) => (
+                          <SelectItem key={sound.code} value={sound.code}>
+                            {sound.name}
+                          </SelectItem>
+                        ))}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Heart Sounds</div>
+                        {ALL_SOUNDS.filter(s => s.code.startsWith('HEART')).map((sound) => (
+                          <SelectItem key={sound.code} value={sound.code}>
+                            {sound.name}
+                          </SelectItem>
+                        ))}
+                        <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-2">Bowel Sounds</div>
+                        {ALL_SOUNDS.filter(s => s.code.startsWith('BOWEL')).map((sound) => (
+                          <SelectItem key={sound.code} value={sound.code}>
+                            {sound.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button
+                    onClick={submitResponse}
+                    disabled={submitting || !selectedLocation || !selectedSound}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        Submit Answer
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="lg:col-span-1">
+              <SessionLeaderboard sessionId={sessionId!} compact />
+            </div>
           </div>
         )}
       </div>
