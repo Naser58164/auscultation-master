@@ -1,1 +1,4 @@
 project_id = "cndnpyplhelztkilvbby"
+
+[functions.arduino-bridge]
+verify_jwt = true
