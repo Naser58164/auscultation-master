@@ -256,7 +256,7 @@ export default function ExamineeSession() {
     );
   }
 
-  // Session completed
+  // Session completed - redirect to summary
   if (session.status === 'completed') {
     return (
       <DashboardLayout>
@@ -266,7 +266,14 @@ export default function ExamineeSession() {
           <p className="text-muted-foreground mb-4">
             Thank you for participating!
           </p>
-          <Button onClick={() => navigate('/examinee')}>Back to Dashboard</Button>
+          <div className="flex gap-3">
+            <Button onClick={() => navigate(`/examinee/session/${sessionId}/summary`)}>
+              View Summary
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/examinee')}>
+              Back to Dashboard
+            </Button>
+          </div>
         </div>
       </DashboardLayout>
     );
