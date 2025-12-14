@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useArduinoSerial } from '@/hooks/useArduinoSerial';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { BodyDiagram } from '@/components/BodyDiagram';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,8 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Pause, Square, Users, Copy, Send, Volume2, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Play, Pause, Square, Users, Copy, Send, Volume2, Loader2, CheckCircle, XCircle, Usb, Unplug, Terminal } from 'lucide-react';
 import { Session, Sound, SoundSystem, ALL_LOCATIONS, LUNG_SOUNDS, HEART_SOUNDS, BOWEL_SOUNDS, Response as SessionResponse } from '@/types/database';
 
 interface Participant {
@@ -25,6 +27,8 @@ export default function ExaminerSessionControl() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const arduino = useArduinoSerial();
+  const [showLogs, setShowLogs] = useState(false);
 
   const [session, setSession] = useState<Session | null>(null);
   const [sounds, setSounds] = useState<Sound[]>([]);
@@ -133,17 +137,20 @@ export default function ExaminerSessionControl() {
 
       if (error) throw error;
 
-      // Generate command string for Arduino
-      const command = `${selectedSystem.toUpperCase()}-${selectedLocation}-${selectedSound}-V${volume[0]}`;
-      console.log('Command sent:', command);
+      // Send command to Arduino via edge function
+      await arduino.playSound(selectedSystem, selectedSound, selectedLocation, volume[0]);
 
-      toast({ title: 'Command Sent', description: command });
+      toast({ title: 'Command Sent', description: `Playing ${selectedSound} at ${selectedLocation}` });
     } catch (error) {
       console.error('Error sending command:', error);
       toast({ title: 'Error', description: 'Failed to send command', variant: 'destructive' });
     } finally {
       setSending(false);
     }
+  };
+
+  const handleStopSound = async () => {
+    await arduino.stopSound();
   };
 
   const copyJoinLink = () => {
@@ -238,6 +245,81 @@ export default function ExaminerSessionControl() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
+          {/* Arduino Connection */}
+          <Card className="lg:col-span-3">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    {arduino.isConnected ? (
+                      <Usb className="h-5 w-5 text-success" />
+                    ) : (
+                      <Unplug className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    Manikin Hardware
+                  </CardTitle>
+                  <Badge variant={arduino.isConnected ? 'default' : 'secondary'}>
+                    {arduino.isConnected ? 'Connected' : 'Disconnected'}
+                  </Badge>
+                  {!arduino.isSupported && (
+                    <Badge variant="destructive">WebSerial Not Supported</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowLogs(!showLogs)}
+                  >
+                    <Terminal className="h-4 w-4 mr-1" />
+                    {showLogs ? 'Hide' : 'Show'} Logs
+                  </Button>
+                  {arduino.isConnected ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleStopSound}>
+                        <Square className="h-4 w-4 mr-1" />
+                        Stop Sound
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={arduino.disconnect}>
+                        <Unplug className="h-4 w-4 mr-1" />
+                        Disconnect
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => arduino.connect()}
+                      disabled={!arduino.isSupported || arduino.isConnecting}
+                    >
+                      {arduino.isConnecting ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <Usb className="h-4 w-4 mr-1" />
+                      )}
+                      Connect Arduino
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            {showLogs && (
+              <CardContent className="pt-0">
+                <ScrollArea className="h-32 w-full rounded border bg-muted/30 p-2 font-mono text-xs">
+                  {arduino.logs.length === 0 ? (
+                    <p className="text-muted-foreground">No logs yet...</p>
+                  ) : (
+                    arduino.logs.map((log, i) => (
+                      <div key={i} className="text-muted-foreground">{log}</div>
+                    ))
+                  )}
+                </ScrollArea>
+                <Button variant="ghost" size="sm" onClick={arduino.clearLogs} className="mt-2">
+                  Clear Logs
+                </Button>
+              </CardContent>
+            )}
+          </Card>
+
           {/* Control Panel */}
           <Card className="lg:col-span-2">
             <CardHeader>
