@@ -105,22 +105,26 @@ export const BOWEL_LOCATIONS: AnatomicalLocation[] = [
 
 export const ALL_LOCATIONS = [...LUNG_LOCATIONS, ...HEART_LOCATIONS, ...BOWEL_LOCATIONS];
 
-// Sound categories
+// Sound categories - codes match sound_library table
 export const LUNG_SOUNDS = [
-  { code: 'LUNG_NORMAL', name: 'Normal Vesicular' },
+  { code: 'LUNG_VESICULAR', name: 'Normal Vesicular' },
   { code: 'LUNG_CRACKLES', name: 'Crackles (Rales)' },
   { code: 'LUNG_WHEEZES', name: 'Wheezes' },
   { code: 'LUNG_RHONCHI', name: 'Rhonchi' },
   { code: 'LUNG_STRIDOR', name: 'Stridor' },
-  { code: 'LUNG_PLEURAL_RUB', name: 'Pleural Friction Rub' },
+  { code: 'LUNG_FRICTION_RUB', name: 'Pleural Friction Rub' },
+  { code: 'LUNG_DIMINISHED', name: 'Diminished Breath Sounds' },
+  { code: 'LUNG_BRONCHIAL', name: 'Bronchial Breath Sounds' },
 ];
 
 export const HEART_SOUNDS = [
   { code: 'HEART_NORMAL', name: 'Normal S1/S2' },
-  { code: 'HEART_S3', name: 'S3 Gallop' },
-  { code: 'HEART_S4', name: 'S4 Gallop' },
+  { code: 'HEART_S3_GALLOP', name: 'S3 Gallop' },
+  { code: 'HEART_S4_GALLOP', name: 'S4 Gallop' },
   { code: 'HEART_SYSTOLIC_MURMUR', name: 'Systolic Murmur' },
   { code: 'HEART_DIASTOLIC_MURMUR', name: 'Diastolic Murmur' },
+  { code: 'HEART_AORTIC_STENOSIS', name: 'Aortic Stenosis' },
+  { code: 'HEART_MITRAL_REGURG', name: 'Mitral Regurgitation' },
   { code: 'HEART_PERICARDIAL_RUB', name: 'Pericardial Friction Rub' },
 ];
 
@@ -129,6 +133,7 @@ export const BOWEL_SOUNDS = [
   { code: 'BOWEL_HYPERACTIVE', name: 'Hyperactive' },
   { code: 'BOWEL_HYPOACTIVE', name: 'Hypoactive' },
   { code: 'BOWEL_ABSENT', name: 'Absent' },
+  { code: 'BOWEL_TINKLING', name: 'High-Pitched Tinkling' },
   { code: 'BOWEL_BORBORYGMI', name: 'Borborygmi' },
 ];
 
