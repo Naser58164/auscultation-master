@@ -10,9 +10,19 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Send, Loader2, Clock, CheckCircle, Volume2, Radio } from 'lucide-react';
+import { Send, Loader2, Clock, CheckCircle, Volume2, Radio, XCircle, MapPin, Music } from 'lucide-react';
 import { Session, ALL_SOUNDS, ALL_LOCATIONS, SoundSystem } from '@/types/database';
 import { toast as sonnerToast } from 'sonner';
+
+interface ResponseFeedback {
+  isLocationCorrect: boolean;
+  isSoundCorrect: boolean;
+  expectedLocationName: string;
+  expectedSoundName: string;
+  submittedLocationName: string;
+  submittedSoundName: string;
+  responseTimeMs: number | null;
+}
 
 export default function ExamineeSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -31,6 +41,7 @@ export default function ExamineeSession() {
   // Answer state
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [selectedSound, setSelectedSound] = useState<string>('');
+  const [feedback, setFeedback] = useState<ResponseFeedback | null>(null);
 
   useEffect(() => {
     if (sessionId) {
@@ -59,6 +70,7 @@ export default function ExamineeSession() {
       setSelectedLocation(null);
       setSelectedSound('');
       setSubmitted(false);
+      setFeedback(null);
       setStartTime(Date.now());
       prevSoundIdRef.current = session.current_sound_id;
     }
@@ -132,15 +144,19 @@ export default function ExamineeSession() {
       const expectedSoundId = session.current_sound_id;
       const isLocationCorrect = selectedLocation === expectedLocation;
 
-      // Get the expected sound code to compare
+      // Get the expected sound details
       let isSoundCorrect = false;
+      let expectedSoundCode = '';
       if (expectedSoundId) {
         const { data: expectedSound } = await supabase
           .from('sound_library')
-          .select('sound_code')
+          .select('sound_code, name')
           .eq('id', expectedSoundId)
-          .single();
-        isSoundCorrect = expectedSound?.sound_code === selectedSound;
+          .maybeSingle();
+        if (expectedSound) {
+          expectedSoundCode = expectedSound.sound_code;
+          isSoundCorrect = expectedSound.sound_code === selectedSound;
+        }
       }
 
       // Find the submitted sound ID
@@ -148,7 +164,7 @@ export default function ExamineeSession() {
         .from('sound_library')
         .select('id')
         .eq('sound_code', selectedSound)
-        .single();
+        .maybeSingle();
 
       const { error } = await supabase
         .from('responses')
@@ -166,13 +182,31 @@ export default function ExamineeSession() {
 
       if (error) throw error;
 
-      setSubmitted(true);
-      toast({
-        title: 'Response Submitted',
-        description: isLocationCorrect && isSoundCorrect
-          ? 'Correct! Great job!'
-          : 'Submitted. Wait for the next question.',
+      // Build feedback
+      const expectedLocationName = ALL_LOCATIONS.find(l => l.id === expectedLocation)?.name || expectedLocation || 'Unknown';
+      const expectedSoundName = ALL_SOUNDS.find(s => s.code === expectedSoundCode)?.name || expectedSoundCode || 'Unknown';
+      const submittedLocationName = ALL_LOCATIONS.find(l => l.id === selectedLocation)?.name || selectedLocation || 'Unknown';
+      const submittedSoundName = ALL_SOUNDS.find(s => s.code === selectedSound)?.name || selectedSound || 'Unknown';
+
+      setFeedback({
+        isLocationCorrect,
+        isSoundCorrect,
+        expectedLocationName,
+        expectedSoundName,
+        submittedLocationName,
+        submittedSoundName,
+        responseTimeMs: responseTime,
       });
+
+      setSubmitted(true);
+      
+      if (isLocationCorrect && isSoundCorrect) {
+        sonnerToast.success('Perfect!', { description: 'Both location and sound are correct!' });
+      } else if (isLocationCorrect || isSoundCorrect) {
+        sonnerToast.info('Partially Correct', { description: 'Review the feedback below.' });
+      } else {
+        sonnerToast.error('Incorrect', { description: 'Review the correct answers below.' });
+      }
     } catch (error: any) {
       console.error('Error submitting response:', error);
       toast({ title: 'Error', description: 'Failed to submit response', variant: 'destructive' });
@@ -300,14 +334,103 @@ export default function ExamineeSession() {
           </div>
         )}
 
-        {submitted ? (
-          <Card className="max-w-md mx-auto">
-            <CardContent className="py-12 text-center">
-              <CheckCircle className="h-16 w-16 text-success mx-auto mb-4" />
-              <h2 className="text-2xl font-display font-bold mb-2">Response Submitted</h2>
-              <p className="text-muted-foreground">
-                Wait for the next question from your examiner.
-              </p>
+        {submitted && feedback ? (
+          <Card className="max-w-lg mx-auto">
+            <CardHeader className="text-center pb-4">
+              {feedback.isLocationCorrect && feedback.isSoundCorrect ? (
+                <div className="mx-auto w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle className="h-10 w-10 text-success" />
+                </div>
+              ) : (
+                <div className="mx-auto w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+                  <XCircle className="h-10 w-10 text-destructive" />
+                </div>
+              )}
+              <CardTitle className="text-2xl">
+                {feedback.isLocationCorrect && feedback.isSoundCorrect
+                  ? 'Perfect Answer!'
+                  : feedback.isLocationCorrect || feedback.isSoundCorrect
+                  ? 'Partially Correct'
+                  : 'Incorrect'}
+              </CardTitle>
+              <CardDescription>
+                {feedback.responseTimeMs && (
+                  <span className="text-sm">Response time: {(feedback.responseTimeMs / 1000).toFixed(1)}s</span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Location Feedback */}
+              <div className={`p-4 rounded-lg border-2 ${feedback.isLocationCorrect ? 'border-success/50 bg-success/5' : 'border-destructive/50 bg-destructive/5'}`}>
+                <div className="flex items-start gap-3">
+                  <MapPin className={`h-5 w-5 mt-0.5 ${feedback.isLocationCorrect ? 'text-success' : 'text-destructive'}`} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold">Location</span>
+                      {feedback.isLocationCorrect ? (
+                        <Badge className="bg-success text-success-foreground text-xs">Correct</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">Incorrect</Badge>
+                      )}
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <p>
+                        <span className="text-muted-foreground">Your answer:</span>{' '}
+                        <span className={feedback.isLocationCorrect ? 'text-success font-medium' : 'text-destructive font-medium'}>
+                          {feedback.submittedLocationName}
+                        </span>
+                      </p>
+                      {!feedback.isLocationCorrect && (
+                        <p>
+                          <span className="text-muted-foreground">Correct answer:</span>{' '}
+                          <span className="text-success font-medium">{feedback.expectedLocationName}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sound Feedback */}
+              <div className={`p-4 rounded-lg border-2 ${feedback.isSoundCorrect ? 'border-success/50 bg-success/5' : 'border-destructive/50 bg-destructive/5'}`}>
+                <div className="flex items-start gap-3">
+                  <Music className={`h-5 w-5 mt-0.5 ${feedback.isSoundCorrect ? 'text-success' : 'text-destructive'}`} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold">Sound Type</span>
+                      {feedback.isSoundCorrect ? (
+                        <Badge className="bg-success text-success-foreground text-xs">Correct</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">Incorrect</Badge>
+                      )}
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <p>
+                        <span className="text-muted-foreground">Your answer:</span>{' '}
+                        <span className={feedback.isSoundCorrect ? 'text-success font-medium' : 'text-destructive font-medium'}>
+                          {feedback.submittedSoundName}
+                        </span>
+                      </p>
+                      {!feedback.isSoundCorrect && (
+                        <p>
+                          <span className="text-muted-foreground">Correct answer:</span>{' '}
+                          <span className="text-success font-medium">{feedback.expectedSoundName}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Score Summary */}
+              <div className="text-center pt-4 border-t">
+                <p className="text-lg font-semibold">
+                  Score: {(feedback.isLocationCorrect ? 1 : 0) + (feedback.isSoundCorrect ? 1 : 0)} / 2
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Waiting for the next question from your examiner...
+                </p>
+              </div>
             </CardContent>
           </Card>
         ) : (
