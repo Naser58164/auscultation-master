@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,8 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Send, Loader2, Clock, CheckCircle } from 'lucide-react';
+import { Send, Loader2, Clock, CheckCircle, Volume2, Radio } from 'lucide-react';
 import { Session, ALL_SOUNDS, ALL_LOCATIONS, SoundSystem } from '@/types/database';
+import { toast as sonnerToast } from 'sonner';
 
 export default function ExamineeSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -24,6 +25,8 @@ export default function ExamineeSession() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
+  const [newQuestionAlert, setNewQuestionAlert] = useState(false);
+  const prevSoundIdRef = useRef<string | null>(null);
 
   // Answer state
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
@@ -39,15 +42,27 @@ export default function ExamineeSession() {
     };
   }, [sessionId]);
 
-  // Reset when session sound changes
+  // Reset when session sound changes (new question from examiner)
   useEffect(() => {
-    if (session?.current_sound_id) {
+    if (session?.current_sound_id && session.current_sound_id !== prevSoundIdRef.current) {
+      // New question received
+      if (prevSoundIdRef.current !== null) {
+        // Not the first load - show notification
+        sonnerToast.info('New Question!', {
+          description: 'The examiner has sent a new sound. Listen carefully!',
+          icon: <Volume2 className="h-4 w-4" />,
+        });
+        setNewQuestionAlert(true);
+        setTimeout(() => setNewQuestionAlert(false), 2000);
+      }
+      
       setSelectedLocation(null);
       setSelectedSound('');
       setSubmitted(false);
       setStartTime(Date.now());
+      prevSoundIdRef.current = session.current_sound_id;
     }
-  }, [session?.current_sound_id, session?.current_location]);
+  }, [session?.current_sound_id]);
 
   const fetchSession = async () => {
     try {
@@ -69,6 +84,8 @@ export default function ExamineeSession() {
   };
 
   const setupRealtimeSubscription = () => {
+    console.log('Setting up realtime subscription for session:', sessionId);
+    
     const channel = supabase
       .channel(`examinee-session-${sessionId}`)
       .on('postgres_changes', {
@@ -77,9 +94,25 @@ export default function ExamineeSession() {
         table: 'sessions',
         filter: `id=eq.${sessionId}`,
       }, (payload) => {
-        setSession(payload.new as Session);
+        console.log('Session update received:', payload.new);
+        const newSession = payload.new as Session;
+        
+        // Check for status changes
+        if (session?.status !== newSession.status) {
+          if (newSession.status === 'active') {
+            sonnerToast.success('Session Started!', { description: 'The examiner has started the session.' });
+          } else if (newSession.status === 'paused') {
+            sonnerToast.info('Session Paused', { description: 'The examiner has paused the session.' });
+          } else if (newSession.status === 'completed') {
+            sonnerToast.success('Session Completed', { description: 'Thank you for participating!' });
+          }
+        }
+        
+        setSession(newSession);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
 
     return () => supabase.removeChannel(channel);
   };
@@ -251,10 +284,21 @@ export default function ExamineeSession() {
               Identify the sound you hear
             </p>
           </div>
-          <Badge className="bg-success text-success-foreground animate-pulse">
+          <Badge className={`bg-success text-success-foreground ${newQuestionAlert ? 'animate-pulse scale-110' : ''} transition-transform`}>
+            <Radio className="h-3 w-3 mr-1 animate-pulse" />
             Question Active
           </Badge>
         </div>
+
+        {newQuestionAlert && (
+          <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 flex items-center gap-3 animate-in slide-in-from-top duration-300">
+            <Volume2 className="h-6 w-6 text-primary animate-bounce" />
+            <div>
+              <p className="font-semibold text-primary">New Sound Playing!</p>
+              <p className="text-sm text-muted-foreground">Listen carefully and identify the sound.</p>
+            </div>
+          </div>
+        )}
 
         {submitted ? (
           <Card className="max-w-md mx-auto">
