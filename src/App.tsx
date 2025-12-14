@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 // Pages
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import JoinSession from "./pages/JoinSession";
 import NotFound from "./pages/NotFound";
 
 // Admin pages
@@ -116,7 +117,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            <Route path="/join/:sessionCode" element={<ExamineeDashboard />} />
+            <Route path="/join/:sessionCode" element={<JoinSession />} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
