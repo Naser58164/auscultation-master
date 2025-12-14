@@ -27,6 +27,7 @@ import ExaminerAnalytics from "./pages/examiner/Analytics";
 import ExamineeDashboard from "./pages/examinee/Dashboard";
 import ExamineeSession from "./pages/examinee/Session";
 import SessionSummary from "./pages/examinee/SessionSummary";
+import Practice from "./pages/examinee/Practice";
 
 const queryClient = new QueryClient();
 
@@ -123,6 +124,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="examinee">
                   <SessionSummary />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/examinee/practice"
+              element={
+                <ProtectedRoute requiredRole="examinee">
+                  <Practice />
                 </ProtectedRoute>
               }
             />

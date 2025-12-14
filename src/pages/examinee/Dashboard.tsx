@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { ClipboardList, Loader2, ArrowRight, History } from 'lucide-react';
+import { ClipboardList, Loader2, ArrowRight, History, Headphones } from 'lucide-react';
 import { Session } from '@/types/database';
 
 export default function ExamineeDashboard() {
@@ -126,11 +126,17 @@ export default function ExamineeDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-display font-bold">Join Session</h1>
-          <p className="text-muted-foreground">
-            Enter a session code to join an exam
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-display font-bold">Join Session</h1>
+            <p className="text-muted-foreground">
+              Enter a session code to join an exam
+            </p>
+          </div>
+          <Button onClick={() => navigate('/examinee/practice')} variant="outline">
+            <Headphones className="mr-2 h-4 w-4" />
+            Practice Mode
+          </Button>
         </div>
 
         <Card className="max-w-md">
